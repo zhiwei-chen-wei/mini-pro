@@ -4,8 +4,10 @@ import joblib
 import numpy as np
 import streamlit as st
 
+
 MODEL_PATH = "models/model.pkl"
 METRICS_PATH = "models/metrics.json"
+
 
 USD_TO_THB = float(os.getenv("USD_TO_THB", "35.0"))
 
