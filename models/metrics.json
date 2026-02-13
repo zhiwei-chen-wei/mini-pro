@@ -1,0 +1,28 @@
+{
+  "dataset_url": "https://raw.githubusercontent.com/zhiwei-chen-wei/game-price-data/main/synthetic_game_data.csv",
+  "rows_used": 2000,
+  "target": "price",
+  "features": [
+    "release_year",
+    "avg_playtime",
+    "metacritic_score",
+    "number_of_achievements",
+    "multiplayer"
+  ],
+  "model": "Ridge Regression (multiple regression)",
+  "rmse": 5.142782803854475,
+  "r2": 0.7438208023120941,
+  "random_state": 42,
+  "price_floor_usd": 0.0,
+  "caps_usd_by_year_bucket_p99": {
+    "pre2015": 86.0216,
+    "2015_2019": 90.1778,
+    "2020plus": 93.22679999999995
+  },
+  "cap_quantile": 0.99,
+  "year_buckets": {
+    "pre2015": "<2015",
+    "2015_2019": "2015-2019",
+    "2020plus": ">=2020"
+  }
+}

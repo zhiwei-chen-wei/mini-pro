@@ -12,63 +12,74 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 
-DATA_URL = (
-    "https://raw.githubusercontent.com/zygmuntz/steam-games-dataset/master/games.csv"
-)
+
+DATA_URL = "https://raw.githubusercontent.com/zhiwei-chen-wei/game-price-data/main/synthetic_game_data.csv"
+
 MODEL_DIR = "models"
-MODEL_PATH = os.path.join(MODEL_DIR, "model.joblib")
+MODEL_PATH = os.path.join(MODEL_DIR, "model.pkl")     # ใช้ .pkl ให้ตรง error ที่คุณเห็น
 METRICS_PATH = os.path.join(MODEL_DIR, "metrics.json")
+
+FEATURES = [
+    "release_year",
+    "avg_playtime",
+    "metacritic_score",
+    "number_of_achievements",
+    "multiplayer",
+]
+TARGET = "price"
 
 
 def download_csv(url: str) -> pd.DataFrame:
-    r = requests.get(url, timeout=30)
+    r = requests.get(url, timeout=60)
     r.raise_for_status()
     return pd.read_csv(pd.io.common.BytesIO(r.content))
 
 
-def owners_to_midpoint(s: str) -> float:
-    # owners often like "20000-50000"
-    if pd.isna(s):
-        return np.nan
-    s = str(s).strip()
-    if "-" in s:
-        a, b = s.split("-", 1)
-        try:
-            return (float(a) + float(b)) / 2.0
-        except:
-            return np.nan
-    try:
-        return float(s)
-    except:
-        return np.nan
-
-
 def prepare(df: pd.DataFrame) -> pd.DataFrame:
-    # expected columns in many steam datasets:
-    # price, owners, positive_ratings, negative_ratings, average_playtime, achievements
-    needed = ["price", "owners", "positive_ratings", "negative_ratings", "average_playtime", "achievements"]
+    df = df.copy()
+
+    needed = FEATURES + [TARGET]
     missing = [c for c in needed if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"Dataset missing columns: {missing}. "
-            f"Try a different DATA_URL that contains these fields."
-        )
+        raise ValueError(f"Dataset missing columns: {missing}")
 
-    df = df.copy()
-    df["owners_mid"] = df["owners"].apply(owners_to_midpoint)
+    # coerce to numeric
+    for c in needed:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # keep only target + 5 features
-    keep = ["price", "owners_mid", "positive_ratings", "negative_ratings", "average_playtime", "achievements"]
-    df = df[keep]
+    # keep valid rows
+    df = df.dropna(subset=[TARGET])
+    df = df[df[TARGET] >= 0]
 
-    # price should be numeric
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+    # multiplayer should be 0/1
+    df["multiplayer"] = df["multiplayer"].clip(0, 1)
 
-    # basic cleaning
-    df = df.dropna(subset=["price"])
-    df = df[df["price"] >= 0]
+    # drop rows with missing features
+    df = df.dropna(subset=FEATURES)
 
-    return df
+    return df[needed]
+
+
+def compute_year_caps(df: pd.DataFrame, q: float = 0.99) -> dict:
+    """
+    Auto cap แบบ B: เพดานตามช่วงปี
+    - pre2015: < 2015
+    - 2015_2019: 2015-2019
+    - 2020plus: >= 2020
+    ใช้ quantile (เช่น p99) ของราคาในแต่ละ bucket
+    """
+    buckets = {
+        "pre2015": df["release_year"] < 2015,
+        "2015_2019": (df["release_year"] >= 2015) & (df["release_year"] <= 2019),
+        "2020plus": df["release_year"] >= 2020,
+    }
+
+    caps = {}
+    for key, mask in buckets.items():
+        vals = df.loc[mask, TARGET].dropna().astype(float).values
+        caps[key] = float(np.quantile(vals, q)) if len(vals) else None
+
+    return caps
 
 
 def train_and_save(random_state=42):
@@ -77,8 +88,8 @@ def train_and_save(random_state=42):
     df_raw = download_csv(DATA_URL)
     df = prepare(df_raw)
 
-    X = df[["owners_mid", "positive_ratings", "negative_ratings", "average_playtime", "achievements"]].values
-    y = df["price"].values
+    X = df[FEATURES].values
+    y = df[TARGET].values
 
     x_train, x_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=random_state
@@ -98,16 +109,26 @@ def train_and_save(random_state=42):
     rmse = float(np.sqrt(mean_squared_error(y_test, pred)))
     r2 = float(r2_score(y_test, pred))
 
+    # ✅ caps แบบ B (p99)
+    caps = compute_year_caps(df, q=0.99)
+
     joblib.dump(model, MODEL_PATH)
 
     metrics = {
         "dataset_url": DATA_URL,
         "rows_used": int(len(df)),
-        "features": ["owners_mid", "positive_ratings", "negative_ratings", "average_playtime", "achievements"],
+        "target": TARGET,
+        "features": FEATURES,
         "model": "Ridge Regression (multiple regression)",
         "rmse": rmse,
         "r2": r2,
         "random_state": random_state,
+
+        # ✅ สำหรับ auto cap
+        "price_floor_usd": 0.0,
+        "caps_usd_by_year_bucket_p99": caps,
+        "cap_quantile": 0.99,
+        "year_buckets": {"pre2015": "<2015", "2015_2019": "2015-2019", "2020plus": ">=2020"},
     }
 
     with open(METRICS_PATH, "w", encoding="utf-8") as f:
@@ -117,6 +138,4 @@ def train_and_save(random_state=42):
 
 
 if __name__ == "__main__":
-    m = train_and_save()
-    print("Training done. Saved to:", MODEL_PATH)
-    print("Metrics:", m)
+    print(train_and_save())
