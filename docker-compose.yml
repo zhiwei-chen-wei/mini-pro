@@ -1,0 +1,7 @@
+services:
+  game-price-app:
+    build: .
+    container_name: game-price-streamlit
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
