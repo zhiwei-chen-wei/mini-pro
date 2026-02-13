@@ -7,10 +7,8 @@ import streamlit as st
 MODEL_PATH = "models/model.pkl"
 METRICS_PATH = "models/metrics.json"
 
-# ไม่มี slicer แล้ว -> ใช้ค่าเรทคงที่ (ปรับได้ด้วย env)
 USD_TO_THB = float(os.getenv("USD_TO_THB", "35.0"))
 
-# ✅ บังคับช่วงราคา 0–70 USD
 MIN_PRICE_USD = 0.0
 MAX_PRICE_USD = 70.0
 
